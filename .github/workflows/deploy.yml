@@ -1,56 +1,71 @@
-name: Build and Deploy to EC2
+name: Deploy to AWS ECR & EC2
 
 on:
   push:
-    branches: [ "main" ]
+    branches:
+      - main
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Configure AWS Credentials
-        uses: aws-actions/configure-aws-credentials@v2
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: <your-region> # e.g., us-east-1
-
-      - name: Login to Amazon ECR
-        id: login-ecr
-        uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build, Tag, and Push Image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: fastapi-rag
-          IMAGE_TAG: latest
-        run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
   deploy:
-    needs: build-and-push
+    name: Build & Deploy
     runs-on: ubuntu-latest
-    steps:
-      - name: SSH into EC2 and Deploy
-        uses: appleboy/ssh-action@master
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            # 1. Create/Overwrite the .env file with values from GitHub Secrets
-            # Add a line for every variable your FastAPI app needs
-            echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
-            echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
-            echo "ENVIRONMENT=production" >> .env
-            
-            # 2. Log in to ECR on the EC2 instance (Required to pull the image)
-            aws ecr get-login-password --region <your-region> | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.<your-region>.amazonaws.com
+    # All secrets are sourced from GitHub Secrets, not from Docker .env files
 
-            # 3. Run the deployment script
-            chmod +x deploy.sh
-            ./deploy.sh
+    steps:
+
+    # 1. Checkout code
+    - name: Checkout
+      uses: actions/checkout@v3
+
+    # 2. Configure AWS credentials
+    # AWS credentials are retrieved from GitHub Secrets
+    - name: Configure AWS
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ secrets.AWS_REGION }}
+
+    # 3. Login to ECR
+    - name: Login to ECR
+      run: |
+        aws ecr get-login-password --region ${{ secrets.AWS_REGION }} \
+        | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URI }}
+
+    # 4. Build Docker image
+    # Note: Secrets are passed from GitHub Secrets, not from .env file
+    - name: Build Image
+      run: |
+        docker build -t fastapi-rag . --no-cache
+
+    # 5. Tag image
+    - name: Tag Image
+      run: |
+        docker tag fastapi-rag:latest ${{ secrets.ECR_REPO_URI }}:latest
+
+    # 6. Push to ECR
+    - name: Push Image
+      run: |
+        docker push ${{ secrets.ECR_REPO_URI }}:latest
+
+    # 7. Deploy to EC2 via SSH
+    # EC2 instance credentials come from GitHub Secrets
+    - name: Deploy to EC2 via SSH
+      uses: appleboy/ssh-action@v0.1.6
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_SSH_KEY }}
+        script: |
+          # 1. Create the .env file from GitHub Secrets
+          # Add every secret your app needs here:
+          echo "DATABASE_URL=${{ secrets.DATABASE_URL }}" > .env
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
+          echo "SOME_OTHER_SECRET=${{ secrets.SOME_OTHER_SECRET }}" >> .env
+          
+          # 2. Authenticate Docker on the EC2 instance (so it can pull from ECR)
+          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URI }}
+
+          # 3. Run the deployment script
+          chmod +x deploy.sh
+          ./deploy.sh
