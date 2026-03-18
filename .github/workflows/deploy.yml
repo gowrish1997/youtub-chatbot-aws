@@ -57,21 +57,19 @@ jobs:
         username: ${{ secrets.EC2_USER }}
         key: ${{ secrets.EC2_SSH_KEY }}
         script: |
-          # 1. Create the .env file from GitHub Secrets
-          # Add every secret your app needs here:
-          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" >> .env
-          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> .env
-          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> .env
-          echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> .env
-          echo "EC2_HOST=${{ secrets.EC2_HOST }}" >> .env
-          echo "EC2_USER=${{ secrets.EC2_USER }}" >> .env
-          echo "EC2_SSH_KEY=${{ secrets.EC2_SSH_KEY }}" >> .env
-          echo "ECR_REPO_URI=${{ secrets.ECR_REPO_URI }}" >> .env
-          echo "PINECONE_API_KEY=${{ secrets.PINECONE_API_KEY }}" >> .env
-          echo "PINECONE_INDEX=${{ secrets.PINECONE_INDEX }}" >> .env
+          # 1. Create the .env file from GitHub Secrets (all secrets properly quoted to handle whitespace/special chars)
+          cat > .env << 'EOF'
+          OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
+          AWS_ACCESS_KEY_ID="${{ secrets.AWS_ACCESS_KEY_ID }}"
+          AWS_SECRET_ACCESS_KEY="${{ secrets.AWS_SECRET_ACCESS_KEY }}"
+          AWS_REGION="${{ secrets.AWS_REGION }}"
+          ECR_REPO_URI="${{ secrets.ECR_REPO_URI }}"
+          PINECONE_API_KEY="${{ secrets.PINECONE_API_KEY }}"
+          PINECONE_INDEX="${{ secrets.PINECONE_INDEX }}"
+          EOF
           
           # 2. Authenticate Docker on the EC2 instance (so it can pull from ECR)
-          aws ecr get-login-password --region ${{ secrets.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REPO_URI }}
+          aws ecr get-login-password --region "${{ secrets.AWS_REGION }}" | docker login --username AWS --password-stdin "${{ secrets.ECR_REPO_URI }}"
 
           # 3. Run the deployment script
           chmod +x deploy.sh
