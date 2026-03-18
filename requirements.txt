@@ -1,0 +1,12 @@
+fastapi==0.133.1
+uvicorn==0.41.0
+youtube-transcript-api==0.6.1
+langchain==1.2.10
+langchain-text-splitters==1.1.1
+langchain-pinecone==0.2.13
+langchain-openai==1.1.10
+langchain-core==1.2.15
+pydantic==2.12.5
+python-dotenv==0.21.0
+openai==2.24.0
+gradio==6.7.0
